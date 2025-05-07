@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генератор образовательных программ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .sidebar-programs {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 270px;
+            background: #f8f9fa;
+            border-right: 1px solid #eee;
+            padding-top: 60px;
+            overflow-y: auto;
+            z-index: 10;
+            display: none;
+        }
+        .sidebar-programs.active {
+            display: block;
+        }
+        .sidebar-programs .list-group-item.active {
+            background: #0d6efd;
+            color: #fff;
+            font-weight: bold;
+        }
+        .main-content {
+            margin-left: 0;
+            transition: margin-left 0.3s;
+        }
+        .sidebar-programs.active ~ .main-content {
+            margin-left: 270px;
+        }
+        .program-card {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+        .program-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .program-description {
+            display: none;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 2rem 0;
+        }
+        .editable {
+            border: 1px solid transparent;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .editable:hover {
+            border-color: #ddd;
+            background-color: #f8f9fa;
+        }
+        .editable:focus {
+            border-color: #80bdff;
+            outline: 0;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
+        .step {
+            display: none;
+        }
+        .step.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar-programs" class="sidebar-programs"></div>
+    <div class="main-content">
+        <div class="container py-5">
+            <h1 class="text-center mb-4">Генератор образовательных программ</h1>
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <!-- Шаг 1: Форма ввода -->
+                    <div id="step-form" class="step active">
+                        <form id="programForm" class="mb-4">
+                            <div class="mb-3">
+                                <label for="courseTheme" class="form-label">Тема курса</label>
+                                <input type="text" class="form-control" id="courseTheme" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="keywords" class="form-label">Ключевые слова (через запятую)</label>
+                                <input type="text" class="form-control" id="keywords" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Сгенерировать программы</button>
+                        </form>
+                    </div>
+                    <!-- Шаг 2: Список программ -->
+                    <div id="step-programs" class="step">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3>Сгенерированные программы</h3>
+                            <div>
+                                <button class="btn btn-outline-primary me-2" id="btn-back-to-form">Назад</button>
+                                <button class="btn btn-outline-primary" id="btn-regenerate-programs">Перегенерировать</button>
+                            </div>
+                        </div>
+                        <div id="programsList"></div>
+                    </div>
+                    <!-- Шаг 3: План курса -->
+                    <div id="step-plan" class="step">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3>План курса</h3>
+                            <div>
+                                <button class="btn btn-outline-primary me-2" id="btn-back-to-programs">Назад</button>
+                                <button class="btn btn-outline-primary" id="btn-regenerate-plan">Перегенерировать план</button>
+                            </div>
+                        </div>
+                        <div id="planContent"></div>
+                    </div>
+                    <!-- Шаг 4: Лекция -->
+                    <div id="step-lecture" class="step">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3>Лекционный материал</h3>
+                            <button class="btn btn-outline-primary" id="btn-back-to-plan">Назад к плану курса</button>
+                        </div>
+                        <div id="lectureText"></div>
+                        <button class="btn btn-success mt-3" id="btn-export-lecture">Выгрузить в Word</button>
+                    </div>
+                    <div class="loading">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Пожалуйста, подождите...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Управление этапами
+        function showStep(stepId) {
+            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+            document.getElementById(stepId).classList.add('active');
+        }
+        // Глобальные переменные
+        let lastProgramsRequest = null;
+        let lastPrograms = null;
+        let programIdMap = [];
+        let currentProgramId = null;
+        let currentProgramTitle = null;
+        let currentPlan = null;
+        let currentTheme = null;
+        // Шаг 1: Генерация программ
+        document.getElementById('programForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const courseTheme = document.getElementById('courseTheme').value;
+            const keywords = document.getElementById('keywords').value.split(',').map(k => k.trim());
+            document.querySelector('.loading').style.display = 'block';
+            try {
+                lastProgramsRequest = { course_theme: courseTheme, keywords: keywords };
+                const response = await fetch('/generate_programs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(lastProgramsRequest)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    lastPrograms = data;
+                    await fetchAndRenderSidebarPrograms();
+                    renderPrograms(data);
+                    showStep('step-programs');
+                } else {
+                    throw new Error(data.error || 'Произошла ошибка при генерации программ');
+                }
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
+        });
+        // Кнопка "Перегенерировать программы"
+        document.getElementById('btn-regenerate-programs').onclick = async () => {
+            if (!lastProgramsRequest) return;
+            document.querySelector('.loading').style.display = 'block';
+            try {
+                const response = await fetch('/generate_programs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(lastProgramsRequest)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    lastPrograms = data;
+                    await fetchAndRenderSidebarPrograms();
+                    renderPrograms(data);
+                } else {
+                    throw new Error(data.error || 'Произошла ошибка при генерации программ');
+                }
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
+        };
+        // Кнопка "Назад" к форме
+        document.getElementById('btn-back-to-form').onclick = () => {
+            document.getElementById('sidebar-programs').classList.remove('active');
+            showStep('step-form');
+        };
+        // Рендер программ (основная область)
+        function renderPrograms(programs) {
+            const programsList = document.getElementById('programsList');
+            programsList.innerHTML = '';
+            
+            // Отображаем только выбранную программу
+            if (currentProgramId !== null) {
+                const selectedProgram = programIdMap.find(p => p.id === currentProgramId);
+                if (selectedProgram) {
+                    const card = document.createElement('div');
+                    card.className = 'card program-card';
+                    card.innerHTML = `
+                        <div class="card-body">
+                            <h5 class="card-title">${selectedProgram.title}</h5>
+                            <p class="program-description">${selectedProgram.description}</p>
+                            <button class="btn btn-primary mt-2" onclick="selectProgram(${selectedProgram.id})">Выбрать</button>
+                        </div>
+                    `;
+                    programsList.appendChild(card);
+                }
+            }
+        }
+        // Получить и отрисовать боковое меню программ
+        async function fetchAndRenderSidebarPrograms() {
+            // Получаем все программы из backend (последние 10)
+            const response = await fetch('/');
+            const html = await response.text();
+            // Парсим программы из шаблона (hack, лучше сделать отдельный API, но сейчас быстро)
+            const match = html.match(/window\.__programs__ = (.*?);<\/script>/);
+            let programs = [];
+            if (match) {
+                programs = JSON.parse(match[1]);
+            } else {
+                // fallback: получаем через API (лучше реализовать отдельный endpoint)
+                const resp = await fetch('/api/all_programs');
+                programs = await resp.json();
+            }
+            // Берём последние 10
+            programIdMap = programs.slice(-10);
+            renderSidebarPrograms();
+        }
+        // Рендер бокового меню программ
+        function renderSidebarPrograms() {
+            const sidebar = document.getElementById('sidebar-programs');
+            sidebar.innerHTML = '';
+            if (!programIdMap.length) {
+                sidebar.classList.remove('active');
+                return;
+            }
+            sidebar.classList.add('active');
+            const list = document.createElement('div');
+            list.className = 'list-group';
+            programIdMap.forEach(prog => {
+                const item = document.createElement('a');
+                item.href = '#';
+                item.className = 'list-group-item list-group-item-action' + (prog.id === currentProgramId ? ' active' : '');
+                item.textContent = prog.title;
+                item.onclick = (e) => {
+                    e.preventDefault();
+                    selectProgram(prog.id);
+                };
+                list.appendChild(item);
+            });
+            sidebar.appendChild(list);
+        }
+        // Выбор программы
+        window.selectProgram = async function(id) {
+            currentProgramId = id;
+            renderSidebarPrograms();
+            await loadCoursePlan();
+        };
+        // Загрузка плана курса
+        async function loadCoursePlan(regenerate = false) {
+            document.querySelector('.loading').style.display = 'block';
+            try {
+                let plan;
+                if (!regenerate) {
+                    const response = await fetch(`/get_course_plan/${currentProgramId}`);
+                    if (response.ok) {
+                        plan = await response.json();
+                    }
+                }
+                if (!plan) {
+                    // Генерируем новый план
+                    const response = await fetch(`/generate_course_plan/${currentProgramId}`, { method: 'POST' });
+                    plan = await response.json();
+                }
+                currentPlan = plan;
+                renderPlan(plan);
+                showStep('step-plan');
+            } catch (error) {
+                alert('Ошибка при загрузке или генерации плана курса: ' + error.message);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
+        }
+        // Кнопка "Перегенерировать план курса"
+        document.getElementById('btn-regenerate-plan').onclick = () => {
+            loadCoursePlan(true);
+        };
+        // Кнопка "Назад" к программам
+        document.getElementById('btn-back-to-programs').onclick = () => {
+            showStep('step-programs');
+        };
+        // Рендер плана курса
+        function renderPlan(plan) {
+            const planContent = document.getElementById('planContent');
+            planContent.innerHTML = '';
+            Object.entries(plan).forEach(([theme, content]) => {
+                if (theme !== 'literature') {
+                    const card = document.createElement('div');
+                    card.className = 'card mb-3';
+                    card.innerHTML = `
+                        <div class="card-body">
+                            <h5 class="card-title">${theme}</h5>
+                            <p class="card-text">${content.short_description}</p>
+                            <button class="btn btn-primary mt-2" onclick="generateLecture('${theme.replace(/'/g, "\'")}')">Сгенерировать лекцию</button>
+                        </div>
+                    `;
+                    planContent.appendChild(card);
+                }
+            });
+        }
+        // Генерация лекции
+        window.generateLecture = async function(theme) {
+            currentTheme = theme;
+            document.querySelector('.loading').style.display = 'block';
+            try {
+                const response = await fetch(`/generate_lecture/${currentProgramId}/${encodeURIComponent(theme)}`, { method: 'POST' });
+                const lecture = await response.json();
+                if (response.ok) {
+                    renderLecture(lecture);
+                    showStep('step-lecture');
+                } else {
+                    throw new Error(lecture.error || 'Ошибка при генерации лекции');
+                }
+            } catch (error) {
+                alert('Ошибка при генерации лекции: ' + error.message);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
+        };
+        // Кнопка "Назад к плану курса"
+        document.getElementById('btn-back-to-plan').onclick = () => {
+            showStep('step-plan');
+        };
+        // Рендер лекции
+        function renderLecture(lecture) {
+            const lectureText = document.getElementById('lectureText');
+            lectureText.innerHTML = '';
+            Object.entries(lecture[currentTheme]).forEach(([pairName, content]) => {
+                const section = document.createElement('div');
+                section.className = 'mb-4';
+                section.innerHTML = `
+                    <h4>${pairName}</h4>
+                    <div class="editable" contenteditable="true">${content.introduction}</div>
+                    <h5 class="mt-3">Основные разделы:</h5>
+                    ${content.sections.map(section => `
+                        <div class="editable" contenteditable="true">${section.content}</div>
+                    `).join('')}
+                    <h5 class="mt-3">Заключение:</h5>
+                    <div class="editable" contenteditable="true">${content.conclusion}</div>
+                `;
+                lectureText.appendChild(section);
+            });
+        }
+        // Кнопка "Выгрузить в Word"
+        document.getElementById('btn-export-lecture').onclick = () => {
+            window.location.href = `/export_lecture/${currentProgramId}/${encodeURIComponent(currentTheme)}`;
+        };
+    </script>
+</body>
+</html> 

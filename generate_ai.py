@@ -214,4 +214,10 @@ async def ai_generate(text: str, mode: str) -> str:
 
     except Exception as e:
         print(f"Ошибка при запросе к ИИ: {e}")
-        return ""
+        if hasattr(e, 'response'):
+            print(f"Ответ API: {e.response.text}")
+        # Добавляем отладочную информацию
+        print(f"Completion object: {completion if 'completion' in locals() else 'Not created'}")
+        if 'completion' in locals() and hasattr(completion, 'choices'):
+            print(f"Choices: {completion.choices}")
+        return None
