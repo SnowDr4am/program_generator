@@ -305,9 +305,26 @@
                 document.querySelector('.loading').style.display = 'none';
             }
         }
-        // Кнопка "Перегенерировать план курса"
-        document.getElementById('btn-regenerate-plan').onclick = () => {
-            loadCoursePlan(true);
+        // Кнопка "Перегенерировать план"
+        document.getElementById('btn-regenerate-plan').onclick = async () => {
+            if (!currentProgramId) return;
+            document.querySelector('.loading').style.display = 'block';
+            try {
+                const response = await fetch(`/generate_course_plan/${currentProgramId}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    currentPlan = data;
+                    renderPlan(data);
+                } else {
+                    throw new Error(data.error || 'Произошла ошибка при генерации плана');
+                }
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
         };
         // Кнопка "Назад" к программам
         document.getElementById('btn-back-to-programs').onclick = () => {
@@ -366,9 +383,13 @@
                     <h4>${pairName}</h4>
                     <div class="editable" contenteditable="true">${content.introduction}</div>
                     <h5 class="mt-3">Основные разделы:</h5>
-                    ${content.sections.map(section => `
-                        <div class="editable" contenteditable="true">${section.content}</div>
-                    `).join('')}
+                    ${
+                        Array.isArray(content.sections)
+                        ? content.sections.map(section => `
+                            <div class="editable" contenteditable="true">${section.content}</div>
+                          `).join('')
+                        : '<div class="text-danger">Нет разделов для отображения</div>'
+                    }
                     <h5 class="mt-3">Заключение:</h5>
                     <div class="editable" contenteditable="true">${content.conclusion}</div>
                 `;
@@ -378,6 +399,26 @@
         // Кнопка "Выгрузить в Word"
         document.getElementById('btn-export-lecture').onclick = () => {
             window.location.href = `/export_lecture/${currentProgramId}/${encodeURIComponent(currentTheme)}`;
+        };
+        // Кнопка "Перегенерировать лекцию"
+        document.getElementById('btn-regenerate-lecture').onclick = async () => {
+            if (!currentProgramId || !currentTheme) return;
+            document.querySelector('.loading').style.display = 'block';
+            try {
+                const response = await fetch(`/generate_lecture/${currentProgramId}/${encodeURIComponent(currentTheme)}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    renderLecture(data);
+                } else {
+                    throw new Error(data.error || 'Произошла ошибка при генерации лекции');
+                }
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
         };
     </script>
 </body>
